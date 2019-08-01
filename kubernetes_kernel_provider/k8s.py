@@ -8,6 +8,7 @@ import re
 
 import urllib3
 from kubernetes import client, config
+from kubernetes.config.config_exception import ConfigException
 
 from remote_kernel_provider.container import ContainerKernelLifecycleManager
 
@@ -21,7 +22,18 @@ default_kernel_service_account_name = os.environ.get('EG_DEFAULT_KERNEL_SERVICE_
 kernel_cluster_role = os.environ.get('EG_KERNEL_CLUSTER_ROLE', 'cluster-admin')
 share_gateway_namespace = bool(os.environ.get('EG_SHARED_NAMESPACE', 'False').lower() == 'true')
 
-config.load_incluster_config()
+k8s_api_server_host = None
+k8s_api_server_port = None
+try:
+    config.load_incluster_config()
+except ConfigException as ce:
+    # Check to see if we're in-cluster via env.  If in-cluster, throw, else
+    # try to load from kube config (using KUBECONFIG or ~/.kube/config)
+    if os.getenv('KUBERNETES_SERVICE_HOST') is not None:
+        raise ce
+    config.load_kube_config()
+
+print()
 
 
 class KubernetesKernelLifecycleManager(ContainerKernelLifecycleManager):
@@ -63,7 +75,7 @@ class KubernetesKernelLifecycleManager(ContainerKernelLifecycleManager):
                 pod_status = pod_info.status.phase
                 if pod_status == 'Running' and self.assigned_host == '':
                     # Pod is running, capture IP
-                    self.assigned_ip = pod_info.status.pod_ip
+                    self.assigned_ip = pod_info.status.host_ip  # pod_ip
                     self.assigned_host = self.container_name
                     self.assigned_node_ip = pod_info.status.host_ip
 
